@@ -1,0 +1,35 @@
+#include <iostream>
+#include <windows.h>
+#include <vector>
+#include <thread>
+
+// ... (RunProcess function from previous example)
+
+void ProcessThread(const wstring& appName, const wstring& cmdLine, HANDLE hEvent) {
+    RunProcess(appName, cmdLine, INFINITE); // Запуск без таймауту в окремому потоці
+    SetEvent(hEvent); // Сигналізуємо про завершення процесу
+}
+
+int main() {
+    // ... (paths to apps as before)
+
+    vector<HANDLE> events;
+    vector<thread> threads;
+
+    for (int i = 0; i < 2; ++i) { // Запуск 2 процесів
+        HANDLE hEvent = CreateEvent(NULL, TRUE, FALSE, NULL); // Створення події
+        events.push_back(hEvent);
+        threads.push_back(thread(ProcessThread, (i == 0 ? notepadPath : calcPath), (i == 0 ? notepadCmdLine : calcPath), hEvent));
+    }
+
+    WaitForMultipleObjects(events.size(), events.data(), TRUE, INFINITE); // Очікування завершення всіх процесів
+
+    for (auto hEvent : events) {
+        CloseHandle(hEvent);
+    }
+    for(auto& thread : threads) {
+        thread.join();
+    }
+
+    return 0;
+}
