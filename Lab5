@@ -1,0 +1,264 @@
+#include <iostream>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <thread>
+#include <vector>
+#include <mutex>
+#include <nlohmann/json.hpp> // JSON library
+
+#pragma comment(lib, "ws2_32.lib")
+
+using json = nlohmann::json;
+
+std::mutex mtx; // Mutex for shared resources
+
+void handleClient(SOCKET clientSocket) {
+    char buffer[1024];
+    int bytesReceived;
+
+    while ((bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0)) > 0) {
+        buffer[bytesReceived] = '\0';
+        std::string receivedData(buffer, bytesReceived);
+
+        try {
+            json j = json::parse(receivedData);
+            std::lock_guard<std::mutex> lock(mtx);
+            std::cout << "Received JSON: " << j.dump(4) << std::endl;
+
+            // Example response with JSON
+            json response;
+            response["status"] = "OK";
+            response["message"] = "Data received successfully";
+            std::string responseStr = response.dump();
+            send(clientSocket, responseStr.c_str(), responseStr.length(), 0);
+
+        } catch (json::parse_error& e) {
+            std::cerr << "JSON parsing error: " << e.what() << std::endl;
+            const char* error_message = "Invalid JSON format";
+            send(clientSocket, error_message, strlen(error_message), 0);
+        }
+    }
+
+    closesocket(clientSocket);
+}
+
+int main() {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "WSAStartup failed." << std::endl;
+        return 1;
+    }
+
+    SOCKET serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (serverSocket == INVALID_SOCKET) {
+        std::cerr << "Socket creation failed." << std::endl;
+        WSACleanup();
+        return 1;
+    }
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(12345);
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "Bind failed." << std::endl;
+        closesocket(serverSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    if (listen(serverSocket, SOMAXCONN) == SOCKET_ERROR) {
+        std::cerr << "Listen failed." << std::endl;
+        closesocket(serverSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    std::cout << "Server listening on port 12345..." << std::endl;
+
+    while (true) {
+        sockaddr_in clientAddr;
+        int clientAddrLen = sizeof(clientAddr);
+        SOCKET clientSocket = accept(serverSocket, (sockaddr*)&clientAddr, &clientAddrLen);
+        if (clientSocket == INVALID_SOCKET) {
+            std::cerr << "Accept failed." << std::endl;
+            continue; // Continue listening for other clients
+        }
+
+        std::thread clientThread(handleClient, clientSocket);
+        clientThread.detach(); // Detach the thread to allow it to run independently
+    }
+
+    closesocket(serverSocket);
+    WSACleanup();
+    return 0;
+}
+#include <iostream>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <string>
+#include <nlohmann/json.hpp>
+
+#pragma comment(lib, "ws2_32.lib")
+
+using json = nlohmann::json;
+
+int main() {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "WSAStartup failed." << std::endl;
+        return 1;
+    }
+
+    SOCKET clientSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (clientSocket == INVALID_SOCKET) {
+        std::cerr << "Socket creation failed." << std::endl;
+        WSACleanup();
+        return 1;
+    }
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(12345);
+    inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr); // Localhost
+
+    if (connect(clientSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "Connect failed." << std::endl;
+        closesocket(clientSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // Example JSON data
+    json jsonData;
+    jsonData["name"] = "John Doe";
+    jsonData["age"] = 30;
+    jsonData["city"] = "New York";
+
+    std::string jsonString = jsonData.dump();
+
+    send(clientSocket, jsonString.c_str(), jsonString.length(), 0);
+
+    char buffer[1024];
+    int bytesReceived = recv(clientSocket, buffer, sizeof(buffer), 0);
+    if (bytesReceived > 0) {
+        buffer[bytesReceived] = '\0';
+        std::cout << "Server response: " << buffer << std::endl;
+    }
+
+    closesocket(clientSocket);
+    WSACleanup();
+    return 0;
+}
+#include <iostream>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <string>
+
+#pragma comment(lib, "ws2_32.lib")
+
+int main() {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "WSAStartup failed." << std::endl;
+        return 1;
+    }
+
+    SOCKET serverSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (serverSocket == INVALID_SOCKET) {
+        std::cerr << "Socket creation failed." << std::endl;
+        WSACleanup();
+        return 1;
+    }
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(12346); // Different port for UDP
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "Bind failed." << std::endl;
+        closesocket(serverSocket);
+        WSACleanup();
+        return 1;
+    }
+
+    std::cout << "UDP Server listening on port 12346..." << std::endl;
+
+    char buffer[1024];
+    sockaddr_in clientAddr;
+    int clientAddrLen = sizeof(clientAddr);
+
+    while (true) {
+        int bytesReceived = recvfrom(serverSocket, buffer, sizeof(buffer), 0, (sockaddr*)&clientAddr, &clientAddrLen);
+        if (bytesReceived > 0) {
+            buffer[bytesReceived] = '\0';
+            std::cout << "Received from " << inet_ntoa(clientAddr.sin_addr) << ":" << ntohs(clientAddr.sin_port) << ": " << buffer << std::endl;
+
+            // Echo back to the client (for chat functionality)
+            sendto(serverSocket, buffer, bytesReceived, 0, (sockaddr*)&clientAddr, clientAddrLen);
+        }
+    }
+
+    closesocket(serverSocket);
+    WSACleanup();
+    return 0;
+}
+#include <iostream>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <string>
+
+#pragma comment(lib, "ws2_32.lib")
+
+int main() {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
+        std::cerr << "WSAStartup failed: " << WSAGetLastError() << std::endl;
+        return 1;
+    }
+
+    SOCKET clientSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (clientSocket == INVALID_SOCKET) {
+        std::cerr << "Socket creation failed: " << WSAGetLastError() << std::endl;
+        WSACleanup();
+        return 1;
+    }
+
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port = htons(12346);
+    inet_pton(AF_INET, "127.0.0.1", &serverAddr.sin_addr); // Localhost
+
+    while (true) {
+        std::string message;
+        std::cout << "Enter message (or 'exit' to quit): ";
+        std::getline(std::cin, message);
+
+        if (message == "exit") {
+            break;
+        }
+
+        int bytesSent = sendto(clientSocket, message.c_str(), message.length(), 0, (sockaddr*)&serverAddr, sizeof(serverAddr));
+        if (bytesSent == SOCKET_ERROR) {
+            std::cerr << "sendto failed: " << WSAGetLastError() << std::endl;
+            break;
+        }
+
+        char buffer[1024];
+        sockaddr_in fromAddr;
+        int fromAddrLen = sizeof(fromAddr);
+        int bytesReceived = recvfrom(clientSocket, buffer, sizeof(buffer), 0, (sockaddr*)&fromAddr, &fromAddrLen);
+        if (bytesReceived == SOCKET_ERROR) {
+            std::cerr << "recvfrom failed: " << WSAGetLastError() << std::endl;
+            break;
+        }
+        buffer[bytesReceived] = '\0';
+        std::cout << "Server reply: " << buffer << std::endl;
+    }
+
+    closesocket(clientSocket);
+    WSACleanup();
+    return 0;
+}
