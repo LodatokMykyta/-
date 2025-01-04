@@ -1,0 +1,119 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <random>
+#include <numeric>
+#include <iomanip>
+#include <limits> // Для INFINITY
+
+using namespace std;
+
+struct Process {
+    int id;
+    int arrivalTime;
+    int burstTime;
+    int priority;
+    int remainingTime;
+    int startTime;
+    int finishTime;
+    int waitingTime;
+};
+
+// ... (generateProcesses() з попереднього прикладу)
+
+// SJF (Non-Preemptive)
+void sjf(vector<Process> processes) {
+    cout << "\nSJF:\n";
+    int currentTime = 0;
+    vector<Process> completedProcesses;
+
+    while (!processes.empty()) {
+        int shortestJobIndex = -1;
+        int shortestJobTime = numeric_limits<int>::max();
+
+        for (size_t i = 0; i < processes.size(); ++i) {
+            if (processes[i].arrivalTime <= currentTime && processes[i].burstTime < shortestJobTime) {
+                shortestJobTime = processes[i].burstTime;
+                shortestJobIndex = i;
+            }
+        }
+
+        if (shortestJobIndex == -1) {
+            currentTime++;
+            continue;
+        }
+
+        processes[shortestJobIndex].startTime = currentTime;
+        currentTime += processes[shortestJobIndex].burstTime;
+        processes[shortestJobIndex].finishTime = currentTime;
+        processes[shortestJobIndex].waitingTime = processes[shortestJobIndex].startTime - processes[shortestJobIndex].arrivalTime;
+
+        cout << "Process " << processes[shortestJobIndex].id << ": Start=" << processes[shortestJobIndex].startTime << ", Finish=" << processes[shortestJobIndex].finishTime << ", Waiting=" << processes[shortestJobIndex].waitingTime << endl;
+
+        completedProcesses.push_back(processes[shortestJobIndex]);
+        processes.erase(processes.begin() + shortestJobIndex);
+    }
+}
+
+
+// Пріоритетне планування зі старінням
+void prioritySchedulingWithAging(vector<Process> processes) {
+    cout << "\nPriority Scheduling with Aging:\n";
+    int currentTime = 0;
+    vector<Process> waitingProcesses;
+    vector<Process> completedProcesses;
+
+    while (!processes.empty() || !waitingProcesses.empty()) {
+        // Додаємо процеси, які прибули
+        for (auto it = processes.begin(); it != processes.end();) {
+            if (it->arrivalTime <= currentTime) {
+                waitingProcesses.push_back(*it);
+                it = processes.erase(it);
+            } else {
+                ++it;
+            }
+        }
+        if (waitingProcesses.empty()){
+            currentTime++;
+            continue;
+        }
+
+        // Сортуємо за пріоритетом (з урахуванням старіння)
+        sort(waitingProcesses.begin(), waitingProcesses.end(), [](const Process& a, const Process& b) {
+            return a.priority > b.priority;
+        });
+
+        // Старіння
+        for (size_t i = 1; i < waitingProcesses.size(); ++i) {
+            if(waitingProcesses[i].arrivalTime <= currentTime)
+                waitingProcesses[i].priority = min(20, waitingProcesses[i].priority +1);
+        }
+
+        waitingProcesses[0].startTime = currentTime;
+        currentTime += waitingProcesses[0].burstTime;
+        waitingProcesses[0].finishTime = currentTime;
+        waitingProcesses[0].waitingTime = waitingProcesses[0].startTime - waitingProcesses[0].arrivalTime;
+
+        cout << "Process " << waitingProcesses[0].id << ": Priority=" << waitingProcesses[0].priority << ", BurstTime=" << waitingProcesses[0].burstTime << ", Start=" << waitingProcesses[0].startTime << ", Finish=" << waitingProcesses[0].finishTime << ", Waiting=" << waitingProcesses[0].waitingTime << endl;
+
+        completedProcesses.push_back(waitingProcesses[0]);
+        waitingProcesses.erase(waitingProcesses.begin());
+    }
+}
+
+// ... (roundRobin(), analyze() з попереднього прикладу)
+
+int main() {
+    // ... (генерування процесів з попереднього прикладу)
+    vector<Process> processesCopy4 = processes;
+
+    sjf(processesCopy4);
+    analyze(processesCopy4, "SJF");
+
+    prioritySchedulingWithAging(processes);
+    analyze(processes, "Priority Scheduling with Aging");
+
+    // ... (виклики roundRobin(), fcfs() та аналіз з попереднього прикладу)
+
+    return 0;
+}
