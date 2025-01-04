@@ -1,0 +1,126 @@
+#include <iostream>
+#include <vector>
+#include <algorithm>
+#include <random>
+#include <numeric>
+#include <iomanip>
+
+using namespace std;
+
+struct Process {
+    int id;
+    int arrivalTime;
+    int burstTime;
+    int priority;
+    int remainingTime;
+    int startTime;
+    int finishTime;
+    int waitingTime;
+};
+
+// Генерація випадкових процесів
+vector<Process> generateProcesses(int numProcesses) {
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> distrib(1, 20); // Діапазон часу виконання та пріоритету
+
+    vector<Process> processes;
+    for (int i = 0; i < numProcesses; ++i) {
+        processes.push_back({i + 1, 0, distrib(gen), distrib(gen), distrib(gen), 0, 0, 0});
+    }
+    return processes;
+}
+
+// Round Robin
+void roundRobin(vector<Process> processes, int timeQuantum) {
+    cout << "\nRound Robin:\n";
+    int currentTime = 0;
+    while (!processes.empty()) {
+        for (size_t i = 0; i < processes.size(); ++i) {
+            if (processes[i].remainingTime > 0) {
+                int executionTime = min(timeQuantum, processes[i].remainingTime);
+                processes[i].remainingTime -= executionTime;
+                currentTime += executionTime;
+                cout << "Process " << processes[i].id << " executed for " << executionTime << " units. Remaining: " << processes[i].remainingTime << endl;
+                if (processes[i].remainingTime == 0) {
+                  processes[i].finishTime = currentTime;
+                  processes[i].waitingTime = processes[i].finishTime - processes[i].burstTime;
+                }
+            }
+        }
+        processes.erase(remove_if(processes.begin(), processes.end(), [](const Process& p){ return p.remainingTime == 0; }), processes.end());
+    }
+}
+
+// FCFS
+void fcfs(vector<Process> processes) {
+    cout << "\nFCFS:\n";
+    int currentTime = 0;
+    for (auto& process : processes) {
+        process.startTime = currentTime;
+        process.finishTime = currentTime + process.burstTime;
+        process.waitingTime = currentTime;
+        currentTime = process.finishTime;
+        cout << "Process " << process.id << ": Start=" << process.startTime << ", Finish=" << process.finishTime << ", Waiting=" << process.waitingTime << endl;
+    }
+}
+
+// Пріоритетне планування
+void priorityScheduling(vector<Process> processes) {
+    cout << "\nPriority Scheduling:\n";
+    sort(processes.begin(), processes.end(), [](const Process& a, const Process& b) {
+        return a.priority > b.priority; // Сортування за спаданням пріоритету
+    });
+    int currentTime = 0;
+    for (auto& process : processes) {
+        process.startTime = currentTime;
+        process.finishTime = currentTime + process.burstTime;
+        process.waitingTime = currentTime;
+        currentTime = process.finishTime;
+        cout << "Process " << process.id << ": Priority=" << process.priority << ", BurstTime=" << process.burstTime << ", Start=" << process.startTime << ", Finish=" << process.finishTime << ", Waiting=" << process.waitingTime << endl;
+
+    }
+}
+
+// Аналіз ефективності
+void analyze(const vector<Process>& processes, const string& algorithmName) {
+    double avgWaitingTime = 0;
+    double avgTurnaroundTime = 0;
+    for (const auto& process : processes) {
+        avgWaitingTime += process.waitingTime;
+        avgTurnaroundTime += (process.finishTime - process.arrivalTime); // Час виконання = час завершення - час прибуття
+    }
+    avgWaitingTime /= processes.size();
+    avgTurnaroundTime /= processes.size();
+
+    cout << "\nAnalysis for " << algorithmName << ":\n";
+    cout << fixed << setprecision(2);
+    cout << "Average Waiting Time: " << avgWaitingTime << endl;
+    cout << "Average Turnaround Time: " << avgTurnaroundTime << endl;
+}
+
+int main() {
+    int numProcesses = 5;
+    int timeQuantum = 2;
+
+    vector<Process> processes = generateProcesses(numProcesses);
+    vector<Process> processesCopy1 = processes;
+    vector<Process> processesCopy2 = processes;
+    vector<Process> processesCopy3 = processes;
+
+    cout << "Initial Processes:\n";
+    for(const auto& p : processes) {
+        cout << "ID: " << p.id << ", Burst Time: " << p.burstTime << ", Priority: " << p.priority << endl;
+    }
+
+    roundRobin(processesCopy1, timeQuantum);
+    analyze(processesCopy1, "Round Robin");
+
+    fcfs(processesCopy2);
+    analyze(processesCopy2, "FCFS");
+
+    priorityScheduling(processesCopy3);
+    analyze(processesCopy3, "Priority Scheduling");
+
+    return 0;
+}
