@@ -1,0 +1,141 @@
+#include <iostream>
+#include <fstream>
+#include <windows.h>
+#include <ctime>
+#include <iomanip>
+#include <vector>
+#include <chrono>
+
+using namespace std;
+using namespace std::chrono;
+
+// Функція для отримання атрибутів файлу
+void GetFileAttributesInfo(const wstring& filename) {
+    WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+    if (GetFileAttributesExW(filename.c_str(), GetFileExInfoStandard, &fileInfo)) {
+        cout << "Attributes: ";
+        if (fileInfo.dwFileAttributes & FILE_ATTRIBUTE_READONLY) cout << "Read Only ";
+        if (fileInfo.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) cout << "Hidden ";
+        if (fileInfo.dwFileAttributes & FILE_ATTRIBUTE_SYSTEM) cout << "System ";
+        // ... інші атрибути
+
+        LARGE_INTEGER fileSize;
+        fileSize.LowPart = fileInfo.nFileSizeLow;
+        fileSize.HighPart = fileInfo.nFileSizeHigh;
+        cout << "\nSize: " << fileSize.QuadPart << " bytes\n";
+
+        SYSTEMTIME st;
+        FileTimeToSystemTime(&fileInfo.ftCreationTime, &st);
+        cout << "Creation Time: " << st.wYear << "-" << st.wMonth << "-" << st.wDay << " " << st.wHour << ":" << st.wMinute << ":" << st.wSecond << endl;
+        FileTimeToSystemTime(&fileInfo.ftLastAccessTime, &st);
+        cout << "Last Access Time: " << st.wYear << "-" << st.wMonth << "-" << st.wDay << " " << st.wHour << ":" << st.wMinute << ":" << st.wSecond << endl;
+        FileTimeToSystemTime(&fileInfo.ftLastWriteTime, &st);
+        cout << "Last Write Time: " << st.wYear << "-" << st.wMonth << "-" << st.wDay << " " << st.wHour << ":" << st.wMinute << ":" << st.wSecond << endl;
+    } else {
+        cerr << "Error getting file attributes: " << GetLastError() << endl;
+    }
+}
+
+// Функція для читання великого файлу (стандартні функції C)
+double ReadLargeFileC(const wstring& filename) {
+    auto start = high_resolution_clock::now();
+    FILE* file = _wfopen(filename.c_str(), L"rb");
+    if (file) {
+        fseek(file, 0, SEEK_END);
+        long fileSize = ftell(file);
+        fseek(file, 0, SEEK_SET);
+        char* buffer = new char[fileSize];
+        fread(buffer, 1, fileSize, file);
+        delete[] buffer;
+        fclose(file);
+    }
+    auto end = high_resolution_clock::now();
+    return duration_cast<milliseconds>(end - start).count();
+}
+
+// Функція для читання великого файлу (небуферизоване введення/виведення Windows API)
+double ReadLargeFileWinAPI(const wstring& filename) {
+    auto start = high_resolution_clock::now();
+    HANDLE file = CreateFileW(filename.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_NO_BUFFERING | FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+    if (file != INVALID_HANDLE_VALUE) {
+        LARGE_INTEGER fileSize;
+        GetFileSizeEx(file, &fileSize);
+        DWORD bytesRead;
+        DWORD bufferSize = 4096; // Розмір буфера має бути кратним розміру сектора диска
+        BYTE* buffer = new BYTE[bufferSize];
+        for (LONGLONG i = 0; i < fileSize.QuadPart; i += bufferSize)
+        {
+            ReadFile(file, buffer, bufferSize, &bytesRead, NULL);
+        }
+        delete[] buffer;
+        CloseHandle(file);
+    }
+    auto end = high_resolution_clock::now();
+    return duration_cast<milliseconds>(end - start).count();
+}
+
+// Асинхронне введення/виведення
+void AsyncIO(const vector<wstring>& filenames) {
+    vector<HANDLE> files;
+    vector<OVERLAPPED> overlapped;
+    vector<char*> buffers;
+    vector<HANDLE> events;
+
+    for (const auto& filename : filenames) {
+        HANDLE file = CreateFileW(filename.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, NULL);
+        if (file == INVALID_HANDLE_VALUE) {
+            cerr << "CreateFile failed: " << GetLastError() << endl;
+            return;
+        }
+
+        files.push_back(file);
+        OVERLAPPED ov = { 0 };
+        ov.hEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+        overlapped.push_back(ov);
+        events.push_back(ov.hEvent);
+
+        char* buffer = new char[1024]; // Розмір буфера
+        buffers.push_back(buffer);
+
+        if (!ReadFile(file, buffer, 1024, NULL, &overlapped.back())) {
+            if (GetLastError() != ERROR_IO_PENDING) {
+                cerr << "ReadFile failed: " << GetLastError() << endl;
+                return;
+            }
+        }
+    }
+
+    DWORD waitResult = WaitForMultipleObjects(events.size(), events.data(), TRUE, INFINITE);
+    if (waitResult >= WAIT_OBJECT_0 && waitResult < WAIT_OBJECT_0 + events.size()) {
+        for (size_t i = 0; i < events.size(); ++i) {
+            DWORD bytesRead;
+            if (GetOverlappedResult(files[i], &overlapped[i], &bytesRead, FALSE)) {
+                cout << "File " << filenames[i] << " read successfully. Bytes read: " << bytesRead << endl;
+            } else {
+                cerr << "GetOverlappedResult failed: " << GetLastError() << endl;
+            }
+            CloseHandle(files[i]);
+            CloseHandle(events[i]);
+            delete[] buffers[i];
+        }
+    } else {
+        cerr << "WaitForMultipleObjects failed: " << GetLastError() << endl;
+    }
+}
+
+int main() {
+    wstring filename = L"test.txt"; // Замініть на свій файл
+    GetFileAttributesInfo(filename);
+
+    wstring largeFilename = L"large_file.txt"; // Створіть великий файл для тестування
+    double timeC = ReadLargeFileC(largeFilename);
+    double timeWinAPI = ReadLargeFileWinAPI(largeFilename);
+
+    cout << "Time with C functions: " << timeC << " ms\n";
+    cout << "Time with WinAPI functions: " << timeWinAPI << " ms\n";
+
+    vector<wstring> asyncFiles = { L"file1.txt", L"file2.txt", L"file3.txt" };
+    AsyncIO(asyncFiles);
+
+    return 0;
+}
